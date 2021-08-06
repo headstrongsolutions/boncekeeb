@@ -36,6 +36,13 @@ pixels = pretty_pixels(board.GP0, pixel_count, 3, 0.5, False, None)
 display = ssd_1306s(board.GP2, board.GP3, 128, 64)
 
 # ====== Spritesheets Setup ====== #
+# key index mappings:
+# 0 : key name
+# 1 : key code
+# 2 : key colour
+# 3 : ?
+# 4 : ?
+
 dev_sprite_details = [
     ["Esc", Keycode.ESCAPE, 0xff0000, 0, 17],
     ["Sh-Del", [Keycode.SHIFT, Keycode.DELETE], 0xff0000, 16, 16],
