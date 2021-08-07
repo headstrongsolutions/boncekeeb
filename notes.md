@@ -30,7 +30,6 @@ pixels = pretty_pixels(board.GP0, pixel_count, 3, 0.5, False, None)
 
 ## Original Python rigging
 
-
 ```python
 # ====== Screen Setup ====== #
 display = ssd_1306s(board.GP2, board.GP3, 128, 64)
@@ -92,11 +91,14 @@ keys = [["1", "2", "3", "4", "5"],
 keypad = keypads(cols, rows, keys)
 
 # ====== Keyboard Pixel Map ====== #
+# Todo - work out the relevance of the indices
+# 0 : is this the led address?
+# 1 : key index
 key_pixel_map = [
-    [5, 1], [10, 2], [15, 3], [20, 4], [19, 5], [14, 6],
-    [9, 7], [4, 8], [3, 9], [8, 10], [13,11], [18,12],
-    [17,13], [12,14], [7,15], [2,16], [1,17], [6,18],
-    [11,19], [16,20]
+    [5, 1], [10, 2], [15, 3], [20, 4], [19, 5], 
+    [14, 6], [9, 7], [4, 8], [3, 9], [8, 10], 
+    [13,11], [18,12], [17,13], [12,14], [7,15],
+    [2,16], [1,17], [6,18], [11,19], [16,20]
 ]
 ```
 
