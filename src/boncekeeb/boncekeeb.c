@@ -13,8 +13,7 @@
 #include "hardware/clocks.h"
 #include "ws2812.pio.h"
 
-////////////////////////from pico examples - gpio - irq
-// Rigging for keys
+#define total_key_count 20
 #define key_col_count 5
 #define key_col1 13
 #define key_col2 12
@@ -28,82 +27,120 @@
 #define key_row3 27
 #define key_row4 28
 
-uint key_cols[5][2] = { {key_col1, 0}, {key_col2, 0}, {key_col3, 0}, {key_col4, 0}, {key_col5, 0} };
-uint key_rows[4][2] = { {key_row1, 0}, {key_row2, 0}, {key_row3, 0}, {key_row4, 0} };
+int key_cols[5] = { key_col1, key_col2, key_col3, key_col4, key_col5 };
+int key_rows[4] = { key_row1, key_row2, key_row3, key_row4 };
+
+int key_xy[key_row_count][key_col_count] = {
+    {0,1,2,3,4}, {5,6,7,8,9} ,{10,11,12,13,14},{15,16,17,18,19}
+};
+
+
+typedef struct{
+    int key_index;
+    int led_index;
+    int rgb[3];
+    int state;
+} Keeb_Key;
+
+Keeb_Key keeb_keys[total_key_count] = {
+    {0, 5, {0xff, 0x00, 0x00},0},
+    {1, 10, {0xff, 0x00, 0x00},0},
+    {2, 15, {0xff, 0x00, 0x00},0},
+    {3, 20, {0xff, 0x00, 0x00},0},
+    {4, 19, {0xff, 0x00, 0x00},0},
+
+    {5, 14, {0x00, 0xff, 0x00},0},
+    {6, 9, {0x00, 0xff, 0x00},0},
+    {7, 4, {0x00, 0xff, 0x00},0},
+    {8, 3, {0x00, 0xff, 0x00},0},
+    {9, 8, {0x00, 0xff, 0x00},0},
+
+    {10, 13, {0x00, 0x00, 0xff},0},
+    {11, 18, {0x00, 0x00, 0xff},0},
+    {12, 17, {0x00, 0x00, 0xff},0},
+    {13, 12, {0x00, 0x00, 0xff},0},
+    {14, 7, {0x00, 0x00, 0xff},0},
+
+    {15, 2, {0xff, 0xff, 0xff},0},
+    {16, 1, {0xff, 0xff, 0xff},0},
+    {17, 6, {0xff, 0xff, 0xff},0},
+    {18, 11, {0x00, 0x00, 0xff},0},
+    {19, 16, {0xff, 0xff, 0xff},0}
+};
 
 void setup_rows()
 {
     // For each column, set gpio to read 
     for ( int i = 0; i <= key_col_count; ++i ){
-        gpio_init(key_rows[i][0]);
-        gpio_set_input_enabled (key_rows[i][0],1);
-        gpio_set_dir (key_rows[i][0], GPIO_IN);
+        gpio_init(key_rows[i]);
+        gpio_set_input_enabled (key_rows[i],1);
+        gpio_set_dir (key_rows[i], GPIO_IN);
     }
 }
 
-void test_rows(uint gpio, uint32_t events) {
-    // For each column in this row, test if high
-    for (int i = 0; i  <= key_row_count; ++i){
-        // test if this row is high
-        int state = gpio_get(key_rows[i][0]); 
-
-        if(state == 1)
-        {
-            key_rows[i][1] = 1;
-            // set the corresponding led to white
-        }
-        else
-        {
-            key_rows[i][1] = 0;
-            // set the corresponding led to off
+int find_key_by_led_index(int led_index){
+    
+    for(int i = 1; i <= sizeof(keeb_keys) / sizeof(Keeb_Key); ++i){
+        if(keeb_keys[i].led_index == led_index){
+            return keeb_keys[i].key_index;
         }
     }
-    
+    return -1;
+}
+
+Keeb_Key find_key_by_gpio(int col, uint row_gpio){
+    int row;
+    int key_index = -1;
+
+    switch (row_gpio){
+        case key_row1:
+            row = 1;
+            break;
+        case key_row2:
+            row = 2;
+            break;
+        case key_row3:
+            row = 3;
+            break;
+        case key_row4:
+            row = 4;
+            break;
+        default:
+            row = -1;
+            break;
+    }
+    if (col > -1 && row > -1){
+        key_index = key_xy[col][row];
+    }
+
+    return keeb_keys[key_index];
+}
+
+void test_rows(uint row_gpio, uint32_t events) {
+    // For each row in this row, test if high
+    for (int i = 0; i  <= key_row_count; ++i){
+        // test if this row is high
+        int state = gpio_get(key_rows[i]); 
+        
+        Keeb_Key keeb_key = find_key_by_gpio(i, row_gpio);
+        keeb_keys[keeb_key.key_index].state = state;
+    }
 }
 
 void set_col_triggers() {
     int i;
     for ( i = 0; i < key_col_count; ++i ) {
-        gpio_set_irq_enabled_with_callback( key_cols[i][0], GPIO_IRQ_EDGE_FALL, true, &test_rows);
+        gpio_set_irq_enabled_with_callback( key_cols[i], GPIO_IRQ_EDGE_FALL, true, &test_rows);
     }
 }
-
-
-static const char *gpio_irq_str[] = {
-        "LEVEL_LOW",  // 0x1
-        "LEVEL_HIGH", // 0x2
-        "EDGE_FALL",  // 0x4
-        "EDGE_RISE"   // 0x8
-};
-
-void gpio_event_string(char *buf, uint32_t events) {
-    for (uint i = 0; i < 4; i++) {
-        uint mask = (1 << i);
-        if (events & mask) {
-            // Copy this event string into the user string
-            const char *event_str = gpio_irq_str[i];
-            while (*event_str != '\0') {
-                *buf++ = *event_str++;
-            }
-            events &= ~mask;
-
-            // If more events add ", "
-            if (events) {
-                *buf++ = ',';
-                *buf++ = ' ';
-            }
-        }
-    }
-    *buf++ = '\0';
-}
-///////////////////////////// ends irq example
-
 
 static inline void put_pixel(uint32_t pixel_grb) {
+    // send the RGB value for a LED pixel
     pio_sm_put_blocking(pio0, 0, pixel_grb << 8u);
 }
 
 static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
+    // create a uint32 from 3 hex values for a hex based RGB colour
     return
             ((uint32_t) (r) << 8) |
             ((uint32_t) (g) << 16) |
@@ -111,26 +148,20 @@ static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 void pattern_single(uint len, uint t) {
-    int pixel_array [20] = { 5, 10, 15, 20, 19,
-                            14,  9,  4,  3,  8,
-                            13, 18, 17, 12,  7,
-                             2,  1,  6, 11, 16 };
-    for (int i = 0; i < len; ++i) {
-        if (pixel_array[i] >= 0 && pixel_array[i] <=5) {
-            put_pixel(urgb_u32(0xff, 0xff, 0xff));
-        }
-        else if (pixel_array[i] > 5 && pixel_array[i] <=10) {
-            put_pixel(urgb_u32(0xff, 0, 0));
-        }
-        else if (pixel_array[i] > 10 && pixel_array[i] <=15) {
-            put_pixel(urgb_u32(0, 0xff, 0));
-        }
-        else if (pixel_array[i] > 15 && pixel_array[i] <=20) {
-            put_pixel(urgb_u32(0, 0, 0xff));
-        }
+    // Loops through all keeb_keys
+    for (int i = 1; i <= sizeof(keeb_keys) / sizeof(Keeb_Key); ++i) {
+        // use the i incremented index as a point of reference to get the keeb_key
+        int keeb_key_index = find_key_by_led_index(i);
+        // then use that keys RGB values to set the LED
+        put_pixel(
+            urgb_u32(
+                keeb_keys[keeb_key_index].rgb[0], 
+                keeb_keys[keeb_key_index].rgb[1], 
+                keeb_keys[keeb_key_index].rgb[2]
+            )
+        );
     }
 }
-
 
 typedef void (*pattern)(uint len, uint t);
 const struct {
@@ -144,7 +175,7 @@ const int PIN_TX = 0;
 
 int main() {
     // bind irq events
-    set_col_triggers();
+    //set_col_triggers();
 
     //set_sys_clock_48();
     stdio_init_all();

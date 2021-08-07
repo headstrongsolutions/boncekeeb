@@ -5,6 +5,5 @@ cmake-*
 build
 .DS_Store
 *.pdf
-boncekeeb
 CMakeCache.txt
 CMakeFiles
