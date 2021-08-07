@@ -43,29 +43,29 @@ typedef struct{
 } Keeb_Key;
 
 Keeb_Key keeb_keys[total_key_count] = {
-    {0, 5, {0xff, 0x00, 0x00},0},
-    {1, 10, {0xff, 0x00, 0x00},0},
-    {2, 15, {0xff, 0x00, 0x00},0},
-    {3, 20, {0xff, 0x00, 0x00},0},
-    {4, 19, {0xff, 0x00, 0x00},0},
+    {0, 16, {0xff, 0x00, 0x00},0},
+    {1, 15, {0xff, 0x00, 0x00},0},
+    {2, 8, {0xff, 0x00, 0x00},0},
+    {3, 7, {0xff, 0x00, 0x00},0},
+    {4, 0, {0xff, 0x00, 0x00},0},
 
-    {5, 14, {0x00, 0xff, 0x00},0},
-    {6, 9, {0x00, 0xff, 0x00},0},
-    {7, 4, {0x00, 0xff, 0x00},0},
-    {8, 3, {0x00, 0xff, 0x00},0},
-    {9, 8, {0x00, 0xff, 0x00},0},
+    {5, 17, {0x00, 0xff, 0x00},0},
+    {6, 14, {0x00, 0xff, 0x00},0},
+    {7, 9, {0x00, 0xff, 0x00},0},
+    {8, 6, {0x00, 0xff, 0x00},0},
+    {9, 1, {0x00, 0xff, 0x00},0},
 
-    {10, 13, {0x00, 0x00, 0xff},0},
-    {11, 18, {0x00, 0x00, 0xff},0},
-    {12, 17, {0x00, 0x00, 0xff},0},
-    {13, 12, {0x00, 0x00, 0xff},0},
-    {14, 7, {0x00, 0x00, 0xff},0},
+    {10, 18, {0x00, 0x00, 0xff},0},
+    {11, 13, {0x00, 0x00, 0xff},0},
+    {12, 10, {0x00, 0x00, 0xff},0},
+    {13, 5, {0x00, 0x00, 0xff},0},
+    {14, 2, {0x00, 0x00, 0xff},0},
 
-    {15, 2, {0xff, 0xff, 0xff},0},
-    {16, 1, {0xff, 0xff, 0xff},0},
-    {17, 6, {0xff, 0xff, 0xff},0},
-    {18, 11, {0x00, 0x00, 0xff},0},
-    {19, 16, {0xff, 0xff, 0xff},0}
+    {15, 19, {0xff, 0xff, 0xff},0},
+    {16, 12, {0xff, 0xff, 0xff},0},
+    {17, 11, {0xff, 0xff, 0xff},0},
+    {18, 4, {0xff,0xff, 0xff},0},
+    {19, 3, {0xff, 0xff, 0xff},0}
 };
 
 void setup_rows()
@@ -80,7 +80,7 @@ void setup_rows()
 
 int find_key_by_led_index(int led_index){
     
-    for(int i = 1; i <= sizeof(keeb_keys) / sizeof(Keeb_Key); ++i){
+    for(int i = 0; i < sizeof(keeb_keys) / sizeof(Keeb_Key); ++i){
         if(keeb_keys[i].led_index == led_index){
             return keeb_keys[i].key_index;
         }
@@ -149,7 +149,7 @@ static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
 
 void pattern_single(uint len, uint t) {
     // Loops through all keeb_keys
-    for (int i = 1; i <= sizeof(keeb_keys) / sizeof(Keeb_Key); ++i) {
+    for (int i = 0; i < sizeof(keeb_keys) / sizeof(Keeb_Key); ++i) {
         // use the i incremented index as a point of reference to get the keeb_key
         int keeb_key_index = find_key_by_led_index(i);
         // then use that keys RGB values to set the LED
@@ -175,7 +175,7 @@ const int PIN_TX = 0;
 
 int main() {
     // bind irq events
-    //set_col_triggers();
+    set_col_triggers();
 
     //set_sys_clock_48();
     stdio_init_all();
