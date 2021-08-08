@@ -5,6 +5,11 @@ pico_generate_pio_header(boncekeeb ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio OUTPUT_D
 
 target_sources(boncekeeb PRIVATE boncekeeb.c)
 
+# enable usb output, disable uart output
+pico_enable_stdio_usb(boncekeeb 1)
+pico_enable_stdio_uart(boncekeeb 0)
+
+
 target_link_libraries(boncekeeb PRIVATE pico_stdlib hardware_pio)
 pico_add_extra_outputs(boncekeeb)
 
