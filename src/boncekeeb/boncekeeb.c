@@ -262,9 +262,9 @@ int main() {
     //int t = 0;
     while (1) {
         scan_cols();
-        # TODO TinyUSB implementation
-        #hid_task(); //HID Task
-        #tud_task(); // tinyusb device task
+        // TODO TinyUSB implementation
+        // hid_task(); //HID Task
+        // tud_task(); // tinyusb device task
         // int pat = rand() % count_of(pattern_table);
         // int dir = (rand() >> 30) & 1 ? 1 : -1;
         // puts(pattern_table[pat].name);
