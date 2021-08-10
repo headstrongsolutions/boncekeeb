@@ -14,11 +14,6 @@
 #include "hardware/clocks.h"
 #include "ws2812.pio.h"
 
-#include "bsp/board.h"
-#include "tusb.h"
-#include "usb_descriptors.h"
-
-
 
 #define total_key_count 20
 
