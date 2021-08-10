@@ -14,6 +14,11 @@
 #include "hardware/clocks.h"
 #include "ws2812.pio.h"
 
+#include "bsp/board.h"
+#include "tusb.h"
+#include "usb_descriptors.h"
+
+
 
 #define total_key_count 20
 
@@ -31,6 +36,7 @@
 #define key_row2 27
 #define key_row3 28
 
+#define key_delay_ms 1000
 
 int key_cols[5] = { key_col0, key_col1, key_col2, key_col3, key_col4 };
 int key_rows[4] = { key_row0, key_row1, key_row2, key_row3 };
@@ -47,33 +53,35 @@ typedef struct{
     int led_index;
     int rgb[3];
     int state;
-    char name[15];
+    absolute_time_t delay_timeout;
+    bool used;
+    char name[4];
 } Keeb_Key;
 
 Keeb_Key keeb_keys[total_key_count] = {
-    {0, 16, {0xff, 0x00, 0x00},0, "ESC"},
-    {1, 15, {0xff, 0x00, 0x00},0, "0"},
-    {2, 8, {0xff, 0x00, 0x00},0, "9"},
-    {3, 7, {0xff, 0x00, 0x00},0, "5"},
-    {4, 0, {0xff, 0x00, 0x00},0, "6"},
+    {0, 16, {0xff, 0x00, 0x00}, 0, {0}, false, "ESC"},
+    {1, 15, {0xff, 0x00, 0x00}, 0, {0}, false, "0"},
+    {2,  8, {0xff, 0x00, 0x00}, 0, {0}, false, "9"},
+    {3,  7, {0xff, 0x00, 0x00}, 0, {0}, false, "5"},
+    {4,  0, {0xff, 0x00, 0x00}, 0, {0}, false, "6"},
 
-    {5, 17, {0x00, 0xff, 0x00},0, "["},
-    {6, 14, {0x00, 0xff, 0x00},0, "]"},
-    {7, 9, {0x00, 0xff, 0x00},0, "T"},
-    {8, 6, {0x00, 0xff, 0x00},0, "O"},
-    {9, 1, {0x00, 0xff, 0x00},0, "I"},
+    {5, 17, {0x00, 0xff, 0x00}, 0, {0}, false, "["},
+    {6, 14, {0x00, 0xff, 0x00}, 0, {0}, false, "]"},
+    {7,  9, {0x00, 0xff, 0x00}, 0, {0}, false, "T"},
+    {8,  6, {0x00, 0xff, 0x00}, 0, {0}, false, "O"},
+    {9,  1, {0x00, 0xff, 0x00}, 0, {0}, false, "I"},
 
-    {10, 18, {0x00, 0x00, 0xff},0, "L"},
-    {11, 13, {0x00, 0x00, 0xff},0, ";"},
-    {12, 10, {0x00, 0x00, 0xff},0, "H"},
-    {13, 5, {0x00, 0x00, 0xff},0, "W"},
-    {14, 2, {0x00, 0x00, 0xff},0, "E"},
+    {10, 18, {0x00, 0x00, 0xff}, 0, {0}, false, "L"},
+    {11, 13, {0x00, 0x00, 0xff}, 0, {0}, false, ";"},
+    {12, 10, {0x00, 0x00, 0xff}, 0, {0}, false, "H"},
+    {13,  5, {0x00, 0x00, 0xff}, 0, {0}, false, "W"},
+    {14,  2, {0x00, 0x00, 0xff}, 0, {0}, false, "E"},
 
-    {15, 19, {0xff, 0xff, 0xff},0, "."},
-    {16, 12, {0xff, 0xff, 0xff},0, "\'"},
-    {17, 11, {0xff, 0xff, 0xff},0, "A"},
-    {18, 4, {0xff,0xff, 0xff},0, "S"},
-    {19, 3, {0xff, 0xff, 0xff},0, "D"}
+    {15, 19, {0xff, 0xff, 0xff}, 0, {0}, false, "."},
+    {16, 12, {0xff, 0xff, 0xff}, 0, {0}, false, "\'"},
+    {17, 11, {0xff, 0xff, 0xff}, 0, {0}, false, "A"},
+    {18,  4, {0xff, 0xff, 0xff}, 0, {0}, false, "S"},
+    {19,  3, {0xff, 0xff, 0xff}, 0, {0}, false, "D"}
 };
 
 void setup_rows()
@@ -132,6 +140,12 @@ Keeb_Key find_key_by_gpio(int col, int row_gpio){
     }
     return keeb_keys[key_index];
 }
+ 
+absolute_time_t delay_timeout (){
+    // Sets a timestamp in the future, cast out by value in key_delay_ms
+    absolute_time_t now = get_absolute_time();
+    return delayed_by_ms(now, key_delay_ms);
+}
 
 void test_rows(uint col) {
     // For each row in this row, test if high
@@ -140,12 +154,35 @@ void test_rows(uint col) {
         bool row_state = gpio_get(key_rows[i]);
         sleep_ms(1);
         Keeb_Key keeb_key = find_key_by_gpio(col, key_rows[i]);
+        
         keeb_keys[keeb_key.key_index].state = row_state;
         if (keeb_keys[keeb_key.key_index].state == 1){
-            keeb_keys[keeb_key.key_index].rgb[0] = 0;
-            keeb_keys[keeb_key.key_index].rgb[1] = 0;
-            keeb_keys[keeb_key.key_index].rgb[2] = 0;
-            // TODO now needs a timeout for repeater
+            absolute_time_t now = get_absolute_time();
+            bool delay_time_expired = absolute_time_diff_us(
+                                        now, 
+                                        keeb_keys[keeb_key.key_index].delay_timeout) > 0;
+            bool key_unused = keeb_keys[keeb_key.key_index].used == false;
+            int button_triggered = keeb_keys[keeb_key.key_index].state == 1;
+            if( (button_triggered) && (delay_time_expired) && (key_unused) ){
+                // this only triggers when the key repeat delay has expired
+                keeb_keys[keeb_key.key_index].rgb[0] = 0;
+                keeb_keys[keeb_key.key_index].rgb[1] = 0;
+                keeb_keys[keeb_key.key_index].rgb[2] = 0;
+                keeb_keys[keeb_key.key_index].used = false;
+                keeb_keys[keeb_key.key_index].delay_timeout = delay_timeout();
+                // TODO - trigger the key press
+                keeb_keys[keeb_key.key_index].used = true;
+            }
+            else if( (button_triggered) && (!delay_time_expired) && (!key_unused) ){
+                // persist the rolling state
+                keeb_keys[keeb_key.key_index].used = true;
+            }
+            else{
+                // clear the states
+                keeb_keys[keeb_key.key_index].delay_timeout = get_absolute_time();
+                keeb_keys[keeb_key.key_index].state = 0;
+                keeb_keys[keeb_key.key_index].used = false;
+            }
         }
     }
 }
@@ -208,6 +245,9 @@ int main() {
     //set_sys_clock_48();
     stdio_init_all();
 
+    // TODO Init TinyUSB
+
+
     // bind irq events
     setup_cols();
     setup_rows();
@@ -222,6 +262,9 @@ int main() {
     //int t = 0;
     while (1) {
         scan_cols();
+        # TODO TinyUSB implementation
+        #hid_task(); //HID Task
+        #tud_task(); // tinyusb device task
         // int pat = rand() % count_of(pattern_table);
         // int dir = (rand() >> 30) & 1 ? 1 : -1;
         // puts(pattern_table[pat].name);
