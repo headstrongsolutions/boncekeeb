@@ -7,3 +7,6 @@ build
 *.pdf
 CMakeCache.txt
 CMakeFiles
+AHK_keyboard
+bonce_hid
+hid_composite
