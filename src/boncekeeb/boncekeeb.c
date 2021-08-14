@@ -12,11 +12,12 @@
 #include "hardware/pio.h"
 #include "hardware/gpio.h"
 #include "hardware/clocks.h"
-#include "ws2812.pio.h"
+#include "generated/ws2812.pio.h"
 #include "hardware/i2c.h"
 
 #include "bsp/board.h"
 #include "tusb.h"
+#include "tusb_config.h"
 #include "usb_descriptors.h"
 #include "bonce_ssd1306.h"
 
@@ -241,8 +242,9 @@ void set_key_leds() {
     // Loops through all keeb_keys
     for (int i = 0; i < sizeof(keeb_keys) / sizeof(Keeb_Key); ++i) {
         // use the i incremented index as a point of reference to get the keeb_key
+        //add_screen_line("in lights");        
         int keeb_key_index = find_key_by_led_index(i);
-        // then use that keys RGB values to set the LED
+        // then use that keys RGB values to set the LED colour
         put_pixel(
             urgb_u32(
                 keeb_keys[keeb_key_index].rgb[0],
@@ -347,50 +349,49 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 const int PIN_TX = 0;
 
 int main() {
-    //set_sys_clock_48();
     stdio_init_all();
 
-    //setup oled
+    //Init oled
     setup_screen_gpios();
     disp.external_vcc=false;
     ssd1306_init(&disp, 128, 64, 0x3C, i2c1);
     setup_screen_text();
 
+    // Init Board
+    board_init();
+    add_screen_line("Board init");
 
+    // Init TinyUSB
+    tusb_init();
+    add_screen_line("TUSB init");
 
+    // Init key watches events
+    setup_cols();
+    add_screen_line("Cols init");
+    setup_rows();
+    add_screen_line("Rows init");
+    setup_keys();
+    add_screen_line("Keys init");
 
-
-    // // Init Board
-    // board_init();
-    // add_screen_line("Board initialised");
-
-    // // Init TinyUSB
-    // tusb_init();
-    // add_screen_line("TinyUsb initialised");
-
-    // // bind irq events
-    // setup_cols();
-    // add_screen_line("Cols initialised");
-    // setup_rows();
-    // add_screen_line("Rows initialised");
-    // setup_keys();
-    // add_screen_line("Keys initialised");
-
-    // //set_key_leds();
+    
+    // TODO LEDs currently broken
+    PIO pio = pio0;
+    int sm = 0;
+    uint offset = pio_add_program(pio, &ws2812_program);
+    add_screen_line("PIO added");
+    //ws2812_program_init(pio, sm, offset, PIN_TX, 800000, false);
+    //set_key_leds();
+    //add_screen_line("LEDs init");
+    
     // // todo get free sm
-    // PIO pio = pio0;
-    // int sm = 0;
-    // uint offset = pio_add_program(pio, &ws2812_program);
-    // add_screen_line("PIO added");
 
-    // ws2812_program_init(pio, sm, offset, PIN_TX, 800000, false);
-    // add_screen_line("ws2812 initialised");
+    // add_screen_line("ws2812 init");
 
     //int t = 0;
     while (1) {
 
         //tud_task();     // TinyUSB device task
-        //scan_cols();    // Get key presses
+        scan_cols();    // Get key presses
         //hid_task();     //HID Task
         // char text[32];
         // bool usb_inited = tusb_inited();
@@ -409,7 +410,7 @@ int main() {
         // char text[32];
         // sprintf(text, "Latest: %i", get_now()); 
         // add_screen_line(text);
-        sleep_ms(500);
+        sleep_ms(50);
         //++t;
     }
     return 1;
