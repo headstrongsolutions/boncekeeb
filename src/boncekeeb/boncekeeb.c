@@ -38,6 +38,7 @@
 #define key_row3 28
 
 #define key_delay_ms 100
+#define PIN_TX 6
 
 int key_cols[5] = { key_col0, key_col1, key_col2, key_col3, key_col4 };
 int key_rows[4] = { key_row0, key_row1, key_row2, key_row3 };
@@ -257,12 +258,12 @@ void set_key_leds() {
 
 // Invoked when device is mounted
 void tud_mount_cb(void) {
-    add_screen_line("DEBUG: Mounted");
+    add_screen_line("Mounted");
 }
 
 // Invoked when device is unmounted
 void tud_umount_cb(void) {
-    add_screen_line("DEBUG: Unmounted");
+    add_screen_line("Unmounted");
 }
 
 // Invoked when usb bus is suspended
@@ -270,25 +271,21 @@ void tud_umount_cb(void) {
 // Within 7ms, device must draw an average of current less than 2.5 mA from bus
 void tud_suspend_cb(bool remote_wakeup_en) {
     (void) remote_wakeup_en;
-    add_screen_line("DEBUG: Suspended");
+    add_screen_line("Suspended");
 }
 
 // Invoked when usb bus is resumed
 void tud_resume_cb(void) {
-    add_screen_line("DEBUG: Resumed Mounted");
+    add_screen_line("Resumed Mounted");
 }
 
 // USB HID Task
 bool hid_task(void) {
-    // Poll every 10ms
-    const uint32_t interval_ms = 10;
-    static uint32_t start_ms = 0;
 
-    if (board_millis() - start_ms < interval_ms) return false; // not enough time
-    start_ms += interval_ms;
     
     // Create an empty set of keycodes ready to hold up to 6 key presses
     uint8_t keycodes[6];
+
     // Iterate over buttons and collect their states (max 6 keypresses)
     for (int i = 0; i < total_key_count; ++i) {
         uint8_t hid_keycode_counter = 0;
@@ -306,10 +303,8 @@ bool hid_task(void) {
         }
     }
     // Issue the report 
-    //bool hid_report = tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0 , keycodes);
-    //return hid_report;
-    tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0 , keycodes);
-    return false;
+    bool hid_report = tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0 , keycodes);
+    return hid_report;
 }
 
 
@@ -317,7 +312,7 @@ bool hid_task(void) {
 // Application must fill buffer report's content and return its length.
 // Return zero will cause the stack to STALL request
 uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen) {
-    printf("DEBUG: tud_hid_get_report_cb triggered\n");
+    printf("tud_hid_get_report_cb triggered\n");
     (void) report_id;
     (void) report_type;
     (void) buffer;
@@ -329,12 +324,12 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
 // Invoked when received SET_REPORT control request or
 // received data on OUT endpoint ( Report ID = 0, Type = 0 )
 void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize) {
-    printf("DEBUG: tud_hid_set_report_cb triggered\n");
-    printf("DEBUG: report_id: %X\n", report_id);
-    printf("DEBUG: report_type: %X\n", report_type);
-    printf("DEBUG: bufsize: %d\n", bufsize);
+    printf("tud_hid_set_report_cb triggered\n");
+    printf("report_id: %X\n", report_id);
+    printf("report_type: %X\n", report_type);
+    printf("bufsize: %d\n", bufsize);
 
-    printf("DEBUG: buffer content:\n");
+    printf("buffer content:\n");
     for (int i = 0; i < bufsize; i++) {
         printf("%02X ", buffer[i]);
     }
@@ -346,7 +341,6 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 }
 
 
-const int PIN_TX = 0;
 
 int main() {
     stdio_init_all();
@@ -373,24 +367,17 @@ int main() {
     setup_keys();
     add_screen_line("Keys init");
 
-    
-    // TODO LEDs currently broken
+    // Init WS2812
     PIO pio = pio0;
     int sm = 0;
     uint offset = pio_add_program(pio, &ws2812_program);
-    add_screen_line("PIO added");
-    //ws2812_program_init(pio, sm, offset, PIN_TX, 800000, false);
-    //set_key_leds();
-    //add_screen_line("LEDs init");
+    //add_screen_line("PIO added");
+    ws2812_program_init(pio, sm, offset, PIN_TX, 800000, false);
+    set_key_leds();
+    add_screen_line("LEDs init");
     
-    // // todo get free sm
-
-    // add_screen_line("ws2812 init");
-
-    //int t = 0;
     while (1) {
-
-        //tud_task();     // TinyUSB device task
+        tud_task();     // TinyUSB device task
         scan_cols();    // Get key presses
         //hid_task();     //HID Task
         // char text[32];
@@ -410,8 +397,7 @@ int main() {
         // char text[32];
         // sprintf(text, "Latest: %i", get_now()); 
         // add_screen_line(text);
-        sleep_ms(50);
-        //++t;
+        //sleep_ms(50);
     }
     return 1;
 }
