@@ -40,6 +40,11 @@
 #define key_delay_ms 100
 #define PIN_TX 6
 
+#define DIM_AMOUNT 0x77
+
+bool keyboard_mounted_and_lit = false;
+bool keyboard_mounted = false;
+
 int key_cols[5] = { key_col0, key_col1, key_col2, key_col3, key_col4 };
 int key_rows[4] = { key_row0, key_row1, key_row2, key_row3 };
 
@@ -51,17 +56,15 @@ int key_xy[key_row_count][key_col_count] = {
 };
 
 typedef struct{
-    int key_index;
-    int led_index;
-    int rgb[3];
-    int state;
+    uint8_t key_index;
+    uint8_t led_index;
+    uint8_t rgb[3];
+    uint8_t state;
     uint32_t delay_timeout;
-    bool issued;
+    uint8_t new;
     char name[4];
     uint8_t keycode;
 } Keeb_Key;
-
-bool clear_keys = false;
 
 // HID Key definitions taken from tinyusb::hid.h
 Keeb_Key keeb_keys[total_key_count] = {
@@ -86,7 +89,7 @@ Keeb_Key keeb_keys[total_key_count] = {
     {15, 19, {0xff, 0xff, 0xff}, 0, 0, false, ".",  HID_KEY_BRACKET_LEFT},
     {16, 12, {0xff, 0xff, 0xff}, 0, 0, false, "\'", HID_KEY_PAGE_DOWN},
     {17, 11, {0xff, 0xff, 0xff}, 0, 0, false, "A",  HID_KEY_ARROW_LEFT},
-    {18,  4, {0xff, 0xff, 0xff}, 0, 0, false, "S",  HID_KEY_ARROW_DOWN},
+    {18,  4, {0xff, 0xff, 0xff}, 0, 0, false, "S",  0x51},
     {19,  3, {0xff, 0xff, 0xff}, 0, 0, false, "D",  HID_KEY_ARROW_RIGHT}
 };
 
@@ -159,61 +162,78 @@ uint32_t get_now(){
 
 void setup_keys() {
     for ( int i = 0; i < total_key_count; ++i ) {
-        keeb_keys[i].issued = false;
+        keeb_keys[i].new = 0;
         keeb_keys[i].state = 0;
         keeb_keys[i].delay_timeout = delay_timeout();
     }
 }
 
-void test_rows(uint col) {
+bool test_rows(uint col) {
+    bool keys_pressed = false;
     // For each row in this row, test if high
     for (int i = 0; i  < key_row_count; ++i){
         // test if this row is high
         bool row_state = gpio_get(key_rows[i]);
+        uint8_t state_as_int = row_state ? 1 : 0;
         sleep_ms(1);
+
+        // find the corresponding key in the collection for 
+        // this column and row index 
         Keeb_Key keeb_key = find_key_by_gpio(col, key_rows[i]);
         
-        keeb_keys[keeb_key.key_index].state = row_state;
-        if (keeb_keys[keeb_key.key_index].state == 1) {
-            uint32_t now = get_now();
-            int time_delta = keeb_keys[keeb_key.key_index].delay_timeout - now;
-            bool button_triggered = keeb_keys[keeb_key.key_index].state == 1? true : false;
-            bool delay_time_expired = (time_delta < 0) ? true : false;
-            //bool key_issued = keeb_keys[keeb_key.key_index].issued ? true: false;
+        // irrespective of result(pressed/high/1 or not pressed/low/0)
+        // set the corresponding key state to this found state
+        keeb_key.state = state_as_int;
 
-            // initially set the button timeout to now if set to 0
-            if ( (button_triggered) && ((delay_time_expired)) ) {
-                // this only triggers when the key repeat delay has expired
-                keeb_keys[keeb_key.key_index].rgb[0] = 0;
-                keeb_keys[keeb_key.key_index].rgb[1] = 0;
-                keeb_keys[keeb_key.key_index].rgb[2] = 0;
-                keeb_keys[keeb_key.key_index].delay_timeout = delay_timeout();
-                keeb_keys[keeb_key.key_index].issued = true;
+        if (keeb_key.state) {
+            // now timestamp
+            uint32_t now = get_now();
+
+            // delta between the keys delay timeout and now
+            int time_delta = keeb_key.delay_timeout - now;
+
+            // is the expiry timestamp in the past?
+            bool delay_time_expired = (time_delta < 0) ? true : false;
+
+            // if button pressed and expired
+            if ( delay_time_expired ) {
+                // show that the keys contain something for the HID report
+                keys_pressed = true;
+
+                // set a new expiry from now in case user holds key down                
+                keeb_key.delay_timeout = delay_timeout();
+                keeb_key.new = 1;
             }
             else {
                 // clear the states
-                keeb_keys[keeb_key.key_index].delay_timeout = get_now();
-                keeb_keys[keeb_key.key_index].state = 0;
-                keeb_keys[keeb_key.key_index].issued = false;
-                clear_keys = true;
+                keeb_key.delay_timeout = get_now();
+                keeb_key.state = 0;
+                keeb_key.new = 0;
             }
         }
     }
+    return keys_pressed;
 }
 
-void scan_cols() {
+bool scan_cols() {
+    bool keys_pressed = false;
+
     // set each col high, then test underlying rows
     for (int i = 0; i < key_col_count; ++i) {
         //set col high
         gpio_put(key_cols[i], true);
 
         // test rows
-        test_rows(i);
+        bool this_keys_pressed = test_rows(i);
+        if (this_keys_pressed) {
+            keys_pressed = true;
+        }
 
         // set col low
         gpio_put(key_cols[i], false);
         sleep_ms(1);
     }
+    return keys_pressed;
 }
 
 static inline void put_pixel(uint32_t pixel_grb) {
@@ -229,18 +249,21 @@ static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
             (uint32_t) (b);
 }
 
-void set_key_leds() {
+void set_key_leds(bool dim) {
     // Loops through all keeb_keys
     for (int i = 0; i < sizeof(keeb_keys) / sizeof(Keeb_Key); ++i) {
         // use the i incremented index as a point of reference to get the keeb_key
         //add_screen_line("in lights");        
         int keeb_key_index = find_key_by_led_index(i);
         // then use that keys RGB values to set the LED colour
+
+        // if dim is set, reduce the brightness by DIM_AMOUNT
+        uint8_t dim_amount = dim ? DIM_AMOUNT : 0;
         put_pixel(
             urgb_u32(
-                keeb_keys[keeb_key_index].rgb[0],
-                keeb_keys[keeb_key_index].rgb[1],
-                keeb_keys[keeb_key_index].rgb[2]
+                keeb_keys[keeb_key_index].rgb[0] - dim_amount,
+                keeb_keys[keeb_key_index].rgb[1] - dim_amount,
+                keeb_keys[keeb_key_index].rgb[2] - dim_amount
             )
         );
     }
@@ -248,14 +271,12 @@ void set_key_leds() {
 
 // Invoked when device is mounted
 void tud_mount_cb(void) {
-    add_screen_line("Mounted");
-    // TODO light the keyboard
+    keyboard_mounted = true; 
 }
 
 // Invoked when device is unmounted
 void tud_umount_cb(void) {
-    add_screen_line("Unmounted");
-    // TODO darken the keyboard
+    keyboard_mounted = false;
 }
 
 // Invoked when usb bus is suspended
@@ -271,15 +292,15 @@ void tud_resume_cb(void) {
     add_screen_line("Resumed Mounted");
 }
 
-// Invoked when sent REPORT successfully to host
-// Application can use this to send the next report
-// Note: For composite reports, report[0] is report ID
-void tud_hid_report_complete_cb(uint8_t itf, uint8_t const* report, uint8_t len)
-{
-    (void) itf;
-    (void) len;
-    (void) report;
-}
+// // Invoked when sent REPORT successfully to host
+// // Application can use this to send the next report
+// // Note: For composite reports, report[0] is report ID
+// void tud_hid_report_complete_cb(uint8_t itf, uint8_t const* report, uint8_t len)
+// {
+//     (void) itf;
+//     (void) len;
+//     (void) report;
+// }
 
 // USB HID Task
 bool hid_task(void) {    
@@ -292,25 +313,24 @@ bool hid_task(void) {
         if ( hid_keycode_counter <= 5 ) {
             // If button state is true and not already issued, add to the keycodes
             Keeb_Key keeb_key = keeb_keys[i];
-            if ( keeb_key.name != NULL && keeb_key.state == 1 && keeb_key.issued == true ) {
+            if ( keeb_key.name != NULL && keeb_key.state == 1 && keeb_key.new == 1 ) {
                 if ( tud_suspended() ) {
                     tud_remote_wakeup();
                 }
                 add_screen_line(keeb_key.name);
                 ship_report = true;
-                clear_keys = true;
                 char text [32];
                 sprintf(text, "%s %i", keeb_key.name, keeb_key.keycode);
                 add_screen_line(text);
                 keycodes[hid_keycode_counter] = keeb_key.keycode;
-                keeb_key.issued = false;
+                keeb_key.new = false;
                 ++hid_keycode_counter;
             } 
         }
     }
 
     if ( ship_report == true ) {
-        add_screen_line("report sent");
+        //add_screen_line("report sent");
         tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keycodes);
     }
 
@@ -319,7 +339,7 @@ bool hid_task(void) {
 
 void clear_hid_report(){
     add_screen_line("report clear sent");
-    //tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, NULL);
+    tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, NULL);
 }
 
 
@@ -339,16 +359,16 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
 // Invoked when received SET_REPORT control request or
 // received data on OUT endpoint ( Report ID = 0, Type = 0 )
 void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize) {
-    printf("tud_hid_set_report_cb triggered\n");
-    printf("report_id: %X\n", report_id);
-    printf("report_type: %X\n", report_type);
-    printf("bufsize: %d\n", bufsize);
+    // printf("tud_hid_set_report_cb triggered\n");
+    // printf("report_id: %X\n", report_id);
+    // printf("report_type: %X\n", report_type);
+    // printf("bufsize: %d\n", bufsize);
 
-    printf("buffer content:\n");
-    for (int i = 0; i < bufsize; i++) {
-        printf("%02X ", buffer[i]);
-    }
-    printf(" - End \n");
+    // printf("buffer content:\n");
+    // for (int i = 0; i < bufsize; i++) {
+    //     printf("%02X ", buffer[i]);
+    // }
+    // printf(" - End \n");
     (void) report_id;
     (void) report_type;
     (void) buffer;
@@ -356,11 +376,10 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 }
 
 
-
 int main() {
     stdio_init_all();
 
-    //Init oled
+    // Init oled
     setup_screen_gpios();
     disp.external_vcc=false;
     ssd1306_init(&disp, 128, 64, 0x3C, i2c1);
@@ -388,36 +407,33 @@ int main() {
     uint offset = pio_add_program(pio, &ws2812_program);
     //add_screen_line("PIO added");
     ws2812_program_init(pio, sm, offset, PIN_TX, 800000, false);
-    set_key_leds();
+    set_key_leds(true);
     add_screen_line("LEDs init");
-    bool hid_events = false;
     while (1) {
-        scan_cols();    // Get key presses
-        hid_events = hid_task();     //HID Task
-        if (hid_events  == 0 ) {
-            add_screen_line("tud run");
-            tud_task();     // TinyUSB device task
+        // initially set the keyboard led brightness
+        if ( !keyboard_mounted_and_lit && keyboard_mounted ) {
+            set_key_leds(false);
+            keyboard_mounted_and_lit = true;
+        }
+        else if ( keyboard_mounted_and_lit && !keyboard_mounted ) {
+            set_key_leds(true);
+            keyboard_mounted_and_lit = false;
+        }
+        
+        // find pressed keys
+        bool keys_pressed = scan_cols();
+        char text[32];
+        //sprintf(text, "yes?: %i", keys_pressed);
+        add_screen_line(text);
+        if (keys_pressed  == 0 ) {
+            hid_task();
+            //add_screen_line("tud run");
+            tud_task();
         }
         else {
             add_screen_line("tud NOT run");
         }
-        // char text[32];
-        // bool usb_inited = tusb_inited();
-        // sprintf(text, "Latest: %i, %i", t, usb_inited); 
-        //add_screen_line(text);
-        // int pat = rand() % count_of(pattern_table);
-        // int dir = (rand() >> 30) & 1 ? 1 : -1;
-        // puts(pattern_table[pat].name);
-        // puts(dir == 1 ? "(forward)" : "(backward)");
-        // for (int i = 0; i < 1000; ++i) {
-        //     pattern_table[pat].pat(20, 255);
-        //     slvoideep_ms(10);
-        //     t += dir;
-        // }
-        // sleep_ms(500);
-        // char text[32];
-        // sprintf(text, "Latest: %i", get_now()); 
-        // add_screen_line(text);
+        
         sleep_ms(50);
     }
     return 1;
