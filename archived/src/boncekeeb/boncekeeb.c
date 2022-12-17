@@ -185,7 +185,7 @@ bool test_rows(uint col) {
         // set the corresponding key state to this found state
         keeb_key.state = state_as_int;
 
-        if (keeb_key.state) {
+        if (keeb_key.state == 1 && row_state) {
             // now timestamp
             uint32_t now = get_now();
 
@@ -196,19 +196,19 @@ bool test_rows(uint col) {
             bool delay_time_expired = (time_delta < 0) ? true : false;
 
             // if button pressed and expired
-            if ( delay_time_expired ) {
+            if ( delay_time_expired && keeb_key.name != NULL ) {
+                // set a new expiry from now in case user holds key down                
+                keeb_keys[keeb_key.key_index].delay_timeout = delay_timeout();
+                keeb_keys[keeb_key.key_index].new = 1;
+
                 // show that the keys contain something for the HID report
                 keys_pressed = true;
-
-                // set a new expiry from now in case user holds key down                
-                keeb_key.delay_timeout = delay_timeout();
-                keeb_key.new = 1;
             }
             else {
                 // clear the states
-                keeb_key.delay_timeout = get_now();
-                keeb_key.state = 0;
-                keeb_key.new = 0;
+                keeb_keys[keeb_key.key_index].delay_timeout = get_now();
+                keeb_keys[keeb_key.key_index].state = 0;
+                keeb_keys[keeb_key.key_index].new = 0;
             }
         }
     }
@@ -307,23 +307,26 @@ bool hid_task(void) {
     // Create an empty set of keycodes ready to hold up to 6 key presses
     uint8_t keycodes[6] = {0};
     bool ship_report = false;
+    // Test if any previous states were high 
     // Iterate over buttons and collect their states (max 6 keypresses)
     for ( int i = 0; i < total_key_count; ++i ) {
         uint8_t hid_keycode_counter = 0;
         if ( hid_keycode_counter <= 5 ) {
             // If button state is true and not already issued, add to the keycodes
             Keeb_Key keeb_key = keeb_keys[i];
-            if ( keeb_key.name != NULL && keeb_key.state == 1 && keeb_key.new == 1 ) {
+            char text [32];
+            
+            if (keeb_keys[i].state == 1)
+
+            if ( keeb_key.state == 1 && keeb_key.new == 1 ) {
                 if ( tud_suspended() ) {
                     tud_remote_wakeup();
                 }
-                add_screen_line(keeb_key.name);
-                ship_report = true;
-                char text [32];
-                sprintf(text, "%s %i", keeb_key.name, keeb_key.keycode);
+                sprintf(text, "%s %i", keeb_key.name, keeb_key.state);
                 add_screen_line(text);
+                ship_report = true;
                 keycodes[hid_keycode_counter] = keeb_key.keycode;
-                keeb_key.new = false;
+                keeb_key.new = 0;
                 ++hid_keycode_counter;
             } 
         }
@@ -409,6 +412,9 @@ int main() {
     ws2812_program_init(pio, sm, offset, PIN_TX, 800000, false);
     set_key_leds(true);
     add_screen_line("LEDs init");
+
+    bool key_previously_pressed = false;
+
     while (1) {
         // initially set the keyboard led brightness
         if ( !keyboard_mounted_and_lit && keyboard_mounted ) {
@@ -422,16 +428,24 @@ int main() {
         
         // find pressed keys
         bool keys_pressed = scan_cols();
-        char text[32];
+
+
+
+        //char text[32];
         //sprintf(text, "yes?: %i", keys_pressed);
-        add_screen_line(text);
-        if (keys_pressed  == 0 ) {
+        //add_screen_line(text);
+
+        if (keys_pressed  == 1 ) {
+            key_previously_pressed = true;
             hid_task();
-            //add_screen_line("tud run");
             tud_task();
+            add_screen_line("tud run");
         }
-        else {
-            add_screen_line("tud NOT run");
+        else if(key_previously_pressed) {
+            sleep_ms(10);
+            key_previously_pressed = false;
+            tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, NULL);
+            tud_task();
         }
         
         sleep_ms(50);
