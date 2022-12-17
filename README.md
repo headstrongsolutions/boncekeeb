@@ -1,5 +1,7 @@
 # BonceKeeb v3.0
 
+![Keeb Photo - ooh pretty!](photo.png)
+
 It's a Keyboard! And my online name is Bonce!
 ..I had a brief moment of existential doubt creep in there after re-writing that line too many times and had to google how to spell 'keyboard' because the word utterly lost meaning to me.
 
